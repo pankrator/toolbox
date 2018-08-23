@@ -1,14 +1,58 @@
 package deploy
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+
+	"github.com/Peripli/itest-tools/docker"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/network"
+)
 
 type Deployer struct {
-	builders  []DockerBuilder
-	runnables []Runnable
+	builders    []DockerBuilder
+	runnables   []Runnable
+	deployments map[string]DeploymentResult
+
+	dockerClient *docker.Docker
 }
 
-func NewDeployer() *Deployer {
-	return &Deployer{}
+func NewDeployer(dockerClient *docker.Docker) *Deployer {
+	return &Deployer{
+		dockerClient: dockerClient,
+		deployments:  make(map[string]DeploymentResult),
+	}
+}
+
+type DeploymentResult struct {
+	URL string
+}
+
+type DockerRunOptions struct {
+	Run bool
+	*container.Config
+	*container.HostConfig
+	*network.NetworkingConfig
+	ContainerName string
+}
+
+type MergeConfigFunc func(currOptions DockerRunOptions, dependencies map[string]DeploymentResult) DockerRunOptions
+
+func (d *Deployer) AddDockerRun(name string, dependencies []string, options DockerRunOptions, merge MergeConfigFunc) {
+	finalOptions := merge(options, d.deployments)
+
+	ctx := context.Background()
+	if finalOptions.Run {
+		d.dockerClient.ContainerCreate(ctx,
+			finalOptions.Config,
+			finalOptions.HostConfig,
+			finalOptions.NetworkingConfig,
+			finalOptions.ContainerName)
+	}
+
+	d.deployments[name] = DeploymentResult{
+		URL: "asd",
+	}
 }
 
 func (d *Deployer) AddBuilder(b DockerBuilder) {

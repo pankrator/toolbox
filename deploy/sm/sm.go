@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Peripli/itest-tools/deploy"
 	"github.com/Peripli/itest-tools/deploy/config"
 	"github.com/Peripli/itest-tools/docker"
 	"github.com/docker/docker/api/types"
@@ -27,6 +28,13 @@ func New(settings *config.Settings,
 		settings:     settings,
 		dockerClient: dockerClient,
 	}
+}
+
+func SmMerge(currOptions deploy.DockerRunOptions, dependencies map[string]deploy.DeploymentResult) deploy.DockerRunOptions {
+	postgres := dependencies["postgres"]
+	currOptions.Config.Cmd = append(currOptions.Config.Cmd, "--storage.uri="+postgres.URL)
+	
+	return currOptions
 }
 
 func (sm *ServiceManagerImpl) Name() string {
