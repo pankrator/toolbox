@@ -9,6 +9,7 @@ import (
 	"github.com/Peripli/itest-tools/deploy"
 	"github.com/Peripli/itest-tools/deploy/config"
 	"github.com/Peripli/itest-tools/docker"
+	"github.com/Peripli/itest-tools/orchestrator"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/strslice"
@@ -33,7 +34,7 @@ func New(settings *config.Settings,
 func SmMerge(currOptions deploy.DockerRunOptions, dependencies map[string]deploy.DeploymentResult) deploy.DockerRunOptions {
 	postgres := dependencies["postgres"]
 	currOptions.Config.Cmd = append(currOptions.Config.Cmd, "--storage.uri="+postgres.URL)
-	
+
 	return currOptions
 }
 
@@ -54,40 +55,44 @@ func (sm *ServiceManagerImpl) Build() error {
 	return nil
 }
 
+func test(config *orchestrator.Config, dependencies map[string]deploy.DeploymentResult) *deploy.DockerRunOptions {
+	postgres := dependencies["postgres"]
+
+	portSet := nat.PortSet{}
+	port := nat.Port(config.Port)
+	portSet[port+"/tcp"] = struct{}{}
+
+	portBindings := nat.PortMap{}
+	portBindings[port+"/tcp"] = []nat.PortBinding{
+		{HostPort: ""},
+	}
+	runOptions := &deploy.DockerRunOptions{
+		Config: &container.Config{
+			Image:        config.Image,
+			ExposedPorts: portSet,
+			Cmd: strslice.StrSlice{
+				"--server.port=" + config.Port,
+				"--api.skip_ssl_validation=t",
+				"--api.security.encryption_key=ejHjRNHbS0NaqARSRvnweVV9zcmhQEa8",
+				"--api.token_issuer_url=https://uaa.local.pcfdev.io",
+				"--api.client_id=cf",
+				"--storage.uri=" + postgres.URL,
+			},
+		},
+		HostConfig: &container.HostConfig{
+			PortBindings: portBindings,
+		},
+		NetworkingConfig: nil,
+		ContainerName:    config.Name,
+		NetworkID:        config.NetworkID,
+	}
+
+	return runOptions
+}
+
 func (sm *ServiceManagerImpl) Run() error {
 	if sm.settings.SM.Run {
 		ctx := context.Background()
-		portSet := nat.PortSet{}
-		port := nat.Port(sm.settings.SM.Port)
-		portSet[port+"/tcp"] = struct{}{}
-
-		portBindings := nat.PortMap{}
-		portBindings[port+"/tcp"] = []nat.PortBinding{
-			{HostPort: ""},
-		}
-
-		smContainer, err := sm.dockerClient.ContainerCreate(ctx,
-			&container.Config{
-				Image:        sm.settings.SM.ImageTag,
-				ExposedPorts: portSet,
-				Cmd: strslice.StrSlice{
-					"--server.port=" + sm.settings.SM.Port,
-					"--api.skip_ssl_validation=t",
-					"--api.security.encryption_key=ejHjRNHbS0NaqARSRvnweVV9zcmhQEa8",
-					"--api.token_issuer_url=https://uaa.local.pcfdev.io",
-					"--api.client_id=cf",
-					"--storage.uri=" + sm.settings.PG.URI,
-				},
-			},
-			&container.HostConfig{
-				PortBindings: portBindings,
-			},
-			nil,
-			sm.Name())
-
-		if err != nil {
-			return err
-		}
 
 		err = sm.dockerClient.NetworkConnect(ctx, sm.settings.Docker.NetworkID, smContainer.ID, nil)
 		if err != nil {
