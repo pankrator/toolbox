@@ -1,0 +1,2 @@
+FROM instrumentisto/dep:latest
+
